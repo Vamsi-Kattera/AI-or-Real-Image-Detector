@@ -1,0 +1,122 @@
+import os
+import shutil
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow import keras
+from tensorflow.keras import layers, regularizers, backend as K
+base_dir = r"C:\Users\vamsi\OneDrive\Documents\AI_VS_REAL\dataset"
+classes = ['AI', 'REAL']
+#for split in [train_dir, val_dir]:
+    #for cls in classes:
+        #os.makedirs(os.path.join(split, cls), exist_ok=True)
+print("Files copied and split successfully.", base_dir)
+data_dir = base_dir
+train_ds = tf.keras.utils.image_dataset_from_directory(
+    data_dir,
+    validation_split=0.2,
+    subset="training",
+    seed=123,
+    image_size=(180, 180),
+    batch_size=32)
+val_ds = tf.keras.utils.image_dataset_from_directory(
+    data_dir,
+    validation_split=0.2,
+    subset="validation",
+    seed=123,
+    image_size=(180, 180),
+    batch_size=32)
+num_classes = len(train_ds.class_names)
+print("Class names:", train_ds.class_names)
+for images, labels in train_ds.take(1):
+    print("Images shape:", images.shape)
+    print("Labels shape:", labels.shape)
+for images, labels in train_ds.take(1):
+    print(labels.numpy())
+data_augmentation = tf.keras.Sequential([
+    layers.RandomFlip("horizontal"),
+    #layers.RandomFlip("horizontal_and_vertical"),
+    layers.RandomRotation(0.1),
+    layers.RandomZoom(0.1),
+    layers.RandomContrast(0.1),
+    layers.RandomBrightness(0.1),
+], name = "data_augmentation")
+#def augment_ai(x, y):
+    #if tf.equal(y, 0):
+        #x = data_augmentation(x)
+    #return x, y
+#train_ds = train_ds.map(augment_ai)
+normalization_layer = tf.keras.layers.Rescaling(1./255)
+train_ds = train_ds.map(lambda x, y: (data_augmentation(normalization_layer(x)), y), num_parallel_calls=tf.data.AUTOTUNE)
+val_ds = val_ds.map(lambda x, y: (data_augmentation(normalization_layer(x)), y))
+
+AUTOTUNE = tf.data.AUTOTUNE
+train_ds = train_ds.cache().shuffle(1500).prefetch(buffer_size=AUTOTUNE)
+val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+base_model = tf.keras.applications.MobileNetV2(input_shape=(180, 180, 3),
+                                               include_top=False,
+                                               weights='imagenet')
+base_model.trainable = False
+#base_model = tf.keras.applications.Xception(
+    #include_top=False, 
+    #input_shape=(180, 180, 3), 
+    #weights="imagenet"
+#)
+model = tf.keras.Sequential([
+    #data_augmentation,
+    base_model,
+    #tf.keras.layers.ZeroPadding2D(padding=(1, 1)),
+    #tf.keras.layers.Conv2D(32, 3, padding='same', activation='relu', input_shape=(180, 180, 3)),
+    #tf.keras.layers.Conv2D(64, 3, padding='same', activation='relu'),
+    #tf.keras.layers.Conv2D(128, 3, padding='same', activation='relu'),
+    tf.keras.layers.GlobalAveragePooling2D(),
+    tf.keras.layers.Dropout(0.3),
+    tf.keras.layers.Dense(256, activation='relu'),
+    tf.keras.layers.Dropout(0.3),
+    tf.keras.layers.Dense(128, activation='relu'),
+    tf.keras.layers.Dropout(0.3),
+    tf.keras.layers.Dense(1, activation='sigmoid')
+])
+#model.build(input_shape=(None,180,180,3))
+#def binary_focal_loss(gamma=2., alpha=.25):
+    #def loss(y_true, y_pred):
+        #y_true = tf.cast(y_true, tf.float32)
+        #bce = K.binary_crossentropy(y_true, y_pred)
+        #p_t = y_true * y_pred + (1 - y_true) * (1 - y_pred)
+        #return alpha * K.pow((1 - p_t), gamma) * bce
+    #return loss
+model.compile(optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4),
+              loss = "binary_crossentropy",
+              metrics=['accuracy'])
+#classweights = {0:1.0, 1:1.0}
+callbacks = [tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
+    tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, verbose=1)]
+history = model.fit(
+  train_ds,
+  validation_data=val_ds,
+  epochs=20,
+  callbacks=callbacks,
+  #class_weight=classweights
+)
+model.save_weights("model_weights.h5")
+print("Model weights saved as model_weights.h5")
+#print("weights",weights.ravel())
+#print("weights shape",weights.shape)
+#print("bias shape",bias.shape)
+#print("First 10 weights: ")
+#print(weights.flatten()[:10])
+#model.summary()
+acc = history.history['accuracy']
+val_acc = history.history['val_accuracy'] 
+plt.plot(acc, label='Training Accuracy')
+plt.plot(val_acc, label='Validation Accuracy')
+plt.legend()
+plt.show()
+train_count = sum(1 for _ in train_ds.unbatch())
+val_count = sum(1 for _ in val_ds.unbatch())
+print("Number of training samples:", train_count)
+print("Number of validation samples:", val_count)
+print("train AI:",len(os.listdir(train_ds['/AI'])))
+print("train REAL:",len(os.listdir(train_ds['/REAL'])))
+print("val AI:",len(os.listdir(val_ds['/AI'])))
+print("val REAL:",len(os.listdir(val_ds['/REAL'])))
