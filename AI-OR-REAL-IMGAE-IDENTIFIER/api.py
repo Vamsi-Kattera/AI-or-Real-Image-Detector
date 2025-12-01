@@ -3,10 +3,18 @@ import uvicorn
 from PIL import Image
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras.models import model_from_json
 
 app = FastAPI()
 
-model = tf.keras.models.load_model("model.h5")
+# Load model architecture
+with open("model.h5", "r") as f:
+    model_json = f.read()
+
+model = model_from_json(model_json)
+
+# Load weights
+model.load_weights("model_weights.h5")
 
 def preprocess(img):
     img = img.resize((224, 224))
@@ -25,3 +33,5 @@ async def predict(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
